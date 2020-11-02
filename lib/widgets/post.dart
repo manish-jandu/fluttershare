@@ -131,6 +131,7 @@ class _PostState extends State<Post> {
           .collection('userPosts')
           .doc(postId)
           .update({'likes.$currentUserId': false});
+      removeLikeFromActivityFeed();
       setState(() {
         likeCount -= 1;
         isLiked = false;
@@ -142,16 +143,51 @@ class _PostState extends State<Post> {
           .collection('userPosts')
           .doc(postId)
           .update({'likes.$currentUserId': true});
+      addLikeToActivityFeed();
+
       setState(() {
         likeCount += 1;
         isLiked = true;
         likes[currentUserId] = true;
         showHeart = true;
       });
+
       Timer(Duration(milliseconds: 500), () {
         setState(() {
           showHeart = false;
         });
+      });
+    }
+  }
+
+  void addLikeToActivityFeed() {
+    //add a notification to the postowner's activity feed only if comment made by other user.
+    final bool isNotPostOwner = currentUserId != ownerId;
+    if (isNotPostOwner) {
+      activityFeedRef.doc(ownerId).collection('feedItems').doc(postId).set({
+        'type': 'like',
+        'username': currentUser.username,
+        'userId': currentUser.id,
+        'userProfileImg': currentUser.photoUrl,
+        'postId': postId,
+        'mediaUrl': mediaUrl,
+        'timestamp': timestamp
+      });
+    }
+  }
+
+  void removeLikeFromActivityFeed() {
+    final bool isNotPostOwner = currentUserId != ownerId;
+    if (isNotPostOwner) {
+      activityFeedRef
+          .doc(ownerId)
+          .collection('feedItems')
+          .doc(postId)
+          .get()
+          .then((doc) {
+        if (doc.exists) {
+          doc.reference.delete();
+        }
       });
     }
   }
@@ -264,8 +300,13 @@ class _PostState extends State<Post> {
 showComments(BuildContext context,
     {String postId, String ownerId, String mediaUrl}) {
   Navigator.push(
-      context,
-      MaterialPageRoute(
-          builder: (context) => Comments(
-              postId: postId, postOwnerId: ownerId, postMediaUrl: mediaUrl)));
+    context,
+    MaterialPageRoute(
+      builder: (context) => Comments(
+        postId: postId,
+        postOwnerId: ownerId,
+        postMediaUrl: mediaUrl,
+      ),
+    ),
+  );
 }

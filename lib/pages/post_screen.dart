@@ -30,6 +30,7 @@ class PostScreen extends StatelessWidget {
             ),
           );
         }
+        return circularProgress();
       },
     );
   }

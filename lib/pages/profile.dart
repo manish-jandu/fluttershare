@@ -18,15 +18,22 @@ class Profile extends StatefulWidget {
 }
 
 class _ProfileState extends State<Profile> {
+  bool isFollowing = false;
   String postOrientation = 'grid';
   final String currentUserId = currentUser?.id;
   bool isLoading = false;
+
   int postCount = 0;
+  int followerCount = 0;
+  int followingCount = 0;
   List<Post> posts = [];
   @override
   void initState() {
     super.initState();
     getProfilePosts();
+    getFollowers();
+    getFollowing();
+    checkIfFollowing();
   }
 
   void getProfilePosts() async {
@@ -42,6 +49,37 @@ class _ProfileState extends State<Profile> {
       isLoading = false;
       postCount = snapshot.docs.length;
       posts = snapshot.docs.map((doc) => Post.fromDocument(doc)).toList();
+    });
+  }
+
+  void getFollowers() async {
+    QuerySnapshot snapshot = await followersRef
+        .doc(widget.profileId)
+        .collection('userFollowers')
+        .get();
+    setState(() {
+      followerCount = snapshot.docs.length;
+    });
+  }
+
+  void getFollowing() async {
+    QuerySnapshot snapshot = await followingRef
+        .doc(widget.profileId)
+        .collection('userFollowing')
+        .get();
+    setState(() {
+      followingCount = snapshot.docs.length;
+    });
+  }
+
+  void checkIfFollowing() async {
+    DocumentSnapshot doc = await followersRef
+        .doc(widget.profileId)
+        .collection('userFollowers')
+        .doc(currentUserId)
+        .get();
+    setState(() {
+      isFollowing = doc.exists;
     });
   }
 
@@ -90,15 +128,15 @@ class _ProfileState extends State<Profile> {
           child: Text(
             text,
             style: TextStyle(
-              color: Colors.white,
+              color: isFollowing ? Colors.black : Colors.white,
               fontWeight: FontWeight.bold,
             ),
           ),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-              color: Colors.blue,
+              color: isFollowing ? Colors.white : Colors.blue,
               border: Border.all(
-                color: Colors.blue,
+                color: isFollowing ? Colors.grey : Colors.blue,
               ),
               borderRadius: BorderRadius.circular(5.0)),
         ),
@@ -114,8 +152,85 @@ class _ProfileState extends State<Profile> {
         text: 'Edit Profile',
         function: editProfile,
       );
+    } else if (isFollowing) {
+      return buildButton(text: 'Unfollow', function: handleUnfollowUser);
+    } else if (!isFollowing) {
+      return buildButton(text: 'Follow', function: handleFollowUser);
     }
     return Text('profile button');
+  }
+
+  void handleUnfollowUser() {
+    setState(() {
+      isFollowing = false;
+    });
+    //remove follower
+    followersRef
+        .doc(widget.profileId)
+        .collection('userFollowers')
+        .doc(currentUserId)
+        .get()
+        .then((doc) {
+      if (doc.exists) {
+        doc.reference.delete();
+      }
+    });
+    //remove following
+    followingRef
+        .doc(currentUserId)
+        .collection('userFollowing')
+        .doc(widget.profileId)
+        .get()
+        .then((doc) {
+      if (doc.exists) {
+        doc.reference.delete();
+      }
+    });
+
+    //delete activity feed items for them;
+    activityFeedRef
+        .doc(widget.profileId)
+        .collection('feedItems')
+        .doc(currentUserId)
+        .get()
+        .then((doc) {
+      if (doc.exists) {
+        doc.reference.delete();
+      }
+    });
+  }
+
+  void handleFollowUser() {
+    setState(() {
+      isFollowing = true;
+    });
+    //make Auth user follower of that user(update  their follower collection)
+    followersRef
+        .doc(widget.profileId)
+        .collection('userFollowers')
+        .doc(currentUserId)
+        .set({});
+    //put that user  on  your following colleciton (update your following collection)
+
+    followingRef
+        .doc(currentUserId)
+        .collection('userFollowing')
+        .doc(widget.profileId)
+        .set({});
+
+    //add activity feed item for that user to notify about new follower(us);
+    activityFeedRef
+        .doc(widget.profileId)
+        .collection('feedItems')
+        .doc(currentUserId)
+        .set({
+      'type': 'follow',
+      'ownerId': widget.profileId,
+      'username': currentUser.username,
+      'userID': currentUserId,
+      'userProfileImg': currentUser.photoUrl,
+      'timestamp': timestamp
+    });
   }
 
   FutureBuilder buildProfileHeader() {
@@ -149,8 +264,8 @@ class _ProfileState extends State<Profile> {
                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                             children: [
                               buildCountColumn('posts', postCount),
-                              buildCountColumn('followers', 0),
-                              buildCountColumn('following', 0),
+                              buildCountColumn('followers', followerCount),
+                              buildCountColumn('following', followingCount),
                             ],
                           ),
                           Row(

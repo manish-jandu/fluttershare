@@ -93,17 +93,16 @@ class _PostState extends State<Post> {
       this.likes,
       this.likeCount});
 
-      showProfile(BuildContext context, {String profileId}) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => Profile(
-        profileId: profileId,
+  showProfile(BuildContext context, {String profileId}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => Profile(
+          profileId: profileId,
+        ),
       ),
-    ),
-  );
-}
-
+    );
+  }
 
   FutureBuilder buildPostHeader() {
     return FutureBuilder(
@@ -113,13 +112,14 @@ class _PostState extends State<Post> {
           return circularProgress();
         }
         User user = User.fromDocument(snapshot.data);
+        bool isPostOwner = currentUserId == ownerId;
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: Colors.grey,
             backgroundImage: CachedNetworkImageProvider(user.photoUrl),
           ),
           title: GestureDetector(
-            onTap: () => showProfile(context,profileId: user.id),
+            onTap: () => showProfile(context, profileId: user.id),
             child: Text(
               user.username,
               style: TextStyle(
@@ -129,12 +129,74 @@ class _PostState extends State<Post> {
             ),
           ),
           subtitle: Text('location'),
-          trailing: IconButton(
-              icon: Icon(Icons.more_vert),
-              onPressed: () => print('deleting post')),
+          trailing: isPostOwner
+              ? IconButton(
+                  icon: Icon(Icons.more_vert),
+                  onPressed: () => handleDeletePost(context))
+              : Text(''),
         );
       },
     );
+  }
+
+  //NOte: To delete post, ownerId and currentuserId must be equal,
+  // so they can be used interchangably
+  void deletePost() async {
+    //delete post itself
+    postsRef
+        .doc(ownerId)
+        .collection('userPosts')
+        .doc(postId)
+        .get()
+        .then((doc) => {
+              if (doc.exists) {doc.reference.delete()}
+            });
+    //delete uploaded image
+    storageRef.child('post_$postId.jpg').delete();
+    //then delete all activity feed notifications
+    QuerySnapshot activityFeedSnapshot = await activityFeedRef
+        .doc(ownerId)
+        .collection('feedItems')
+        .where('postId', isEqualTo: postId)
+        .get();
+    activityFeedSnapshot.docs.forEach((doc) {
+      if (doc.exists) {
+        doc.reference.delete();
+      }
+    });
+    QuerySnapshot commentsSnapshot =
+        await commentsRef.doc(postId).collection('comments').get();
+    commentsSnapshot.docs.forEach((doc) {
+      if (doc.exists) {
+        doc.reference.delete();
+      }
+    });
+  }
+
+  handleDeletePost(BuildContext parentContext) {
+    return showDialog(
+        context: parentContext,
+        builder: (context) {
+          return SimpleDialog(
+            title: Text('Remove this post?'),
+            children: [
+              SimpleDialogOption(
+                onPressed: () {
+                  Navigator.pop(context);
+                  deletePost();
+                },
+                child: Text(
+                  'delete',
+                  style: TextStyle(color: Colors.red),
+                ),
+              ),
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(context),
+                child: Text('cancel'),
+              ),
+            ],
+          );
+        });
   }
 
   void handleLikePost() {
@@ -324,3 +386,4 @@ showComments(BuildContext context,
     ),
   );
 }
+
